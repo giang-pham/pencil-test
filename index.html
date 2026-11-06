@@ -22,6 +22,7 @@
 <div id="bar">
   <strong>Pencil test</strong>
   <button id="clear">Clear</button>
+  <button id="guard">Scribble guard: ON</button>
   <span id="stats"></span>
 </div>
 <div id="pad"><svg id="svg"></svg></div>
@@ -69,6 +70,19 @@ pad.addEventListener('pointermove', e => {
   cur.pts.push([e.clientX - cur.r.left, e.clientY - cur.r.top, e.pressure]);
   cur.el.setAttribute('d', d(getStroke(cur.pts, { ...opts, simulatePressure: !cur.real })));
 });
+// Scribble guard: tell iPadOS the page handles the Pencil itself, so Scribble
+// (handwriting-to-text) doesn't grab the stroke and cancel it. Non-passive
+// listeners that call preventDefault on stylus touchstart/touchmove.
+let guard = true;
+const guardBtn = document.getElementById('guard');
+guardBtn.onclick = () => { guard = !guard; guardBtn.textContent = 'Scribble guard: ' + (guard ? 'ON' : 'OFF'); };
+const stylusGuard = e => {
+  if (!guard) return;
+  for (const t of [...e.changedTouches, ...e.touches]) if (t.touchType === 'stylus') { e.preventDefault(); return; }
+};
+pad.addEventListener('touchstart', stylusGuard, { passive: false });
+pad.addEventListener('touchmove', stylusGuard, { passive: false });
+
 const end = e => {
   if (e.type === 'pointercancel') c.cancel++; else c.up++;
   show();
