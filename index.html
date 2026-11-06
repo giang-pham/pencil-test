@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Pencil Test</title>
+<style>
+  /* Minimal page that copies the perfect-freehand example's input model:
+     touch-action: none, pointer events only, NO touch listeners, no scrolling. */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #faf8f3;
+    font-family: -apple-system, system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  #bar { padding: 10px 16px; display: flex; gap: 10px; align-items: center; }
+  button { font: inherit; padding: 8px 14px; border-radius: 10px; border: 1px solid #d6cfc2; background: #fff; }
+  #stats { font: 13px ui-monospace, monospace; color: #444; }
+  #pad { position: absolute; left: 16px; right: 16px; top: 64px; bottom: 16px; background: #fff;
+    border: 1px solid #c9a3a3; touch-action: none; }
+  #pad svg { width: 100%; height: 100%; display: block; fill: #1c1f2b; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <strong>Pencil test</strong>
+  <button id="clear">Clear</button>
+  <span id="stats"></span>
+</div>
+<div id="pad"><svg id="svg"></svg></div>
+
+<script type="module">
+import { getStroke } from 'https://cdn.jsdelivr.net/npm/perfect-freehand@1.2.2/+esm';
+
+const pad = document.getElementById('pad'), svg = document.getElementById('svg');
+const NS = 'http://www.w3.org/2000/svg';
+const c = { down: 0, up: 0, cancel: 0, pen: 0, touch: 0, mouse: 0, maxGapMs: 0 };
+const stats = document.getElementById('stats');
+const show = () => stats.textContent =
+  `down ${c.down} · up ${c.up} · cancel ${c.cancel} · pen ${c.pen} · touch ${c.touch} · slowest frame ${Math.round(c.maxGapMs)}ms`;
+show();
+
+// Detect freezes: the longest gap between animation frames
+let last = performance.now();
+(function tick(now) { c.maxGapMs = Math.max(c.maxGapMs, now - last); last = now; requestAnimationFrame(tick); })(last);
+setInterval(show, 500);
+
+const opts = { size: 8, thinning: 0.75, streamline: 0.5, smoothing: 0.5,
+  start: { taper: 0, cap: true }, end: { taper: 0, cap: true } };
+function d(pts) {
+  if (!pts.length) return '';
+  const out = ['M', ...pts[0], 'Q'];
+  for (let i = 0; i < pts.length; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length];
+    out.push(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+  }
+  out.push('Z');
+  return out.join(' ');
+}
+
+let cur = null;
+pad.addEventListener('pointerdown', e => {
+  c.down++; c[e.pointerType] = (c[e.pointerType] || 0) + 1; show();
+  if (e.pointerType === 'touch') return;            // ignore palm / fingers, like Pencil-only
+  pad.setPointerCapture(e.pointerId);
+  const r = pad.getBoundingClientRect();
+  cur = { id: e.pointerId, r, real: e.pointerType === 'pen', pts: [[e.clientX - r.left, e.clientY - r.top, e.pressure]],
+          el: svg.appendChild(document.createElementNS(NS, 'path')) };
+});
+pad.addEventListener('pointermove', e => {
+  if (!cur || cur.id !== e.pointerId) return;
+  cur.pts.push([e.clientX - cur.r.left, e.clientY - cur.r.top, e.pressure]);
+  cur.el.setAttribute('d', d(getStroke(cur.pts, { ...opts, simulatePressure: !cur.real })));
+});
+const end = e => {
+  if (e.type === 'pointercancel') c.cancel++; else c.up++;
+  show();
+  if (!cur || cur.id !== e.pointerId) return;
+  cur.el.setAttribute('d', d(getStroke(cur.pts, { ...opts, simulatePressure: !cur.real, last: true })));
+  cur = null;
+};
+pad.addEventListener('pointerup', end);
+pad.addEventListener('pointercancel', end);
+document.getElementById('clear').onclick = () => {
+  svg.innerHTML = '';
+  Object.assign(c, { down: 0, up: 0, cancel: 0, pen: 0, touch: 0, mouse: 0, maxGapMs: 0 });
+  show();
+};
+</script>
+</body>
+</html>
